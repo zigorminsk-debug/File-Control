@@ -35,7 +35,7 @@ public sealed class EventRepository
     {
         await using var db = new SqliteConnection(_connectionString); await db.OpenAsync();
         var cmd = db.CreateCommand();
-        cmd.CommandText = """INSERT OR IGNORE INTO file_events(timestamp,user,domain,path,document_name,action,process,details,event_record_id) VALUES($t,$u,$d,$p,$n,$a,$pr,$x,$r)""";
+        cmd.CommandText = "INSERT OR IGNORE INTO file_events(timestamp,user,domain,path,document_name,action,process,details,event_record_id) VALUES($t,$u,$d,$p,$n,$a,$pr,$x,$r)";
         cmd.Parameters.AddWithValue("$t", e.Timestamp.ToUniversalTime().ToString("O")); cmd.Parameters.AddWithValue("$u", e.User);
         cmd.Parameters.AddWithValue("$d", e.Domain); cmd.Parameters.AddWithValue("$p", e.Path); cmd.Parameters.AddWithValue("$n", e.DocumentName);
         cmd.Parameters.AddWithValue("$a", e.Action); cmd.Parameters.AddWithValue("$pr", (object?)e.Process ?? DBNull.Value);
@@ -46,9 +46,11 @@ public sealed class EventRepository
     public async Task<List<FileEventRecord>> QueryAsync(DateTimeOffset from, DateTimeOffset to, string? user, string? document, int limit = 5000)
     {
         await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(); var cmd = db.CreateCommand();
-        cmd.CommandText = """SELECT id,timestamp,user,domain,path,document_name,action,process,details,event_record_id FROM file_events
+        cmd.CommandText = """
+          SELECT id,timestamp,user,domain,path,document_name,action,process,details,event_record_id FROM file_events
           WHERE timestamp >= $from AND timestamp < $to AND ($user='' OR user LIKE $user) AND ($doc='' OR document_name LIKE $doc OR path LIKE $doc)
-          ORDER BY timestamp DESC LIMIT $limit""";
+          ORDER BY timestamp DESC LIMIT $limit
+          """;
         cmd.Parameters.AddWithValue("$from", from.ToUniversalTime().ToString("O")); cmd.Parameters.AddWithValue("$to", to.ToUniversalTime().ToString("O"));
         cmd.Parameters.AddWithValue("$user", string.IsNullOrWhiteSpace(user) ? "" : $"%{user}%"); cmd.Parameters.AddWithValue("$doc", string.IsNullOrWhiteSpace(document) ? "" : $"%{document}%"); cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 20000));
         var rows = new List<FileEventRecord>(); await using var r = await cmd.ExecuteReaderAsync();
