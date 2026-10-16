@@ -55,6 +55,12 @@ app.MapPost("/api/open-folder",(string path, Microsoft.Extensions.Options.IOptio
 app.MapGet("/api/settings",(SettingsService settings)=>Results.Ok(settings.Current()));
 app.MapGet("/api/diagnostics",(MonitorDiagnostics d, Microsoft.Extensions.Options.IOptionsMonitor<FileControlOptions> o)=>Results.Ok(new { d.SubscriptionActive, d.LastError, d.Received, d.Accepted, d.LastSecurityEvent, d.LastAcceptedEvent, monitoredPaths=o.CurrentValue.MonitoredPaths }));
 app.MapPut("/api/settings",async(SettingsRequest request,SettingsService settings)=>{var result=await settings.SaveAsync(request);return result.Success?Results.Ok(new{message=result.Message}):Results.BadRequest(new{message=result.Message});});
+app.MapGet("/api/reports/export",async(DateTimeOffset from,DateTimeOffset to,string? user,string? document,string? action,DailyReportService svc,HttpContext context)=>
+{
+    if(to<=from||to-from>TimeSpan.FromDays(366)) return Results.BadRequest("Некорректный диапазон дат");
+    var path=await svc.GenerateFilteredAsync(from,to,user,document,action,cancellationToken:context.RequestAborted);
+    return Results.File(path,"text/html; charset=utf-8",$"FileControl-{from:yyyy-MM-dd}-{to:yyyy-MM-dd}.html",enableRangeProcessing:false);
+});
 app.MapPost("/api/reports/{date}",async(string date,DailyReportService svc)=>DateOnly.TryParse(date,out var day)?Results.Ok(new{path=await svc.GenerateAsync(day)}):Results.BadRequest("Дата должна быть в формате YYYY-MM-DD"));
 app.MapGet("/api/health",()=>Results.Ok(new{status="ok",time=DateTimeOffset.Now}));
 

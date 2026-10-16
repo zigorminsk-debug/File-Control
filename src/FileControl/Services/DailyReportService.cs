@@ -19,9 +19,19 @@ public sealed class DailyReportService : BackgroundService
     }
     public async Task<string> GenerateAsync(DateOnly day,CancellationToken token=default)
     {
-        var from=new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue),TimeZoneInfo.Local.GetUtcOffset(day.ToDateTime(TimeOnly.MinValue))); var rows=await _repo.QueryAsync(from,from.AddDays(1),null,null,20000);
-        var json=JsonSerializer.Serialize(rows,new JsonSerializerOptions{Encoder=JavaScriptEncoder.Default}); var template=await File.ReadAllTextAsync(Path.Combine(_env.WebRootPath,"report-template.html"),token);
+        var from=new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue),TimeZoneInfo.Local.GetUtcOffset(day.ToDateTime(TimeOnly.MinValue)));
+        return await GenerateFilteredAsync(from,from.AddDays(1),null,null,null,$"{day:yyyy-MM-dd}",token);
+    }
+
+    public async Task<string> GenerateFilteredAsync(DateTimeOffset from,DateTimeOffset to,string? user,string? document,string? action,string? label=null,CancellationToken token=default)
+    {
+        var rows=await _repo.QueryAsync(from,to,user,document,20000,action);
+        var json=JsonSerializer.Serialize(rows,new JsonSerializerOptions{Encoder=JavaScriptEncoder.Default});
+        var template=await File.ReadAllTextAsync(Path.Combine(_env.WebRootPath,"report-template.html"),token);
         var dir=Path.IsPathRooted(_options.ReportDirectory)?_options.ReportDirectory:Path.Combine(_env.ContentRootPath,_options.ReportDirectory); Directory.CreateDirectory(dir);
-        var path=Path.Combine(dir,$"FileControl-{day:yyyy-MM-dd}.html"); await File.WriteAllTextAsync(path,template.Replace("__REPORT_DATE__",day.ToString("yyyy-MM-dd")).Replace("__EVENT_DATA__",json),token); _log.LogInformation("Daily report created: {Path}",path); return path;
+        label??=$"{from:dd.MM.yyyy HH:mm} — {to:dd.MM.yyyy HH:mm}";
+        var path=Path.Combine(dir,$"FileControl-report-{DateTime.Now:yyyyMMdd-HHmmss-fff}.html");
+        await File.WriteAllTextAsync(path,template.Replace("__REPORT_DATE__",HtmlEncoder.Default.Encode(label)).Replace("__EVENT_DATA__",json),token);
+        _log.LogInformation("HTML report created: {Path}; events: {Count}",path,rows.Count); return path;
     }
 }
