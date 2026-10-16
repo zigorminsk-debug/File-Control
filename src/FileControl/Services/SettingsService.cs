@@ -57,17 +57,17 @@ public sealed class SettingsService
         {
             var script = Path.Combine(_environment.ContentRootPath, "scripts", "Install-Auditing.ps1");
             if (!File.Exists(script)) return false;
-            var quoted = string.Join(",", paths.Select(p => "'" + p.Replace("'", "''") + "'"));
-            using var process = Process.Start(new ProcessStartInfo
+            foreach (var path in paths)
             {
-                FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Path {quoted}",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
-            if (process == null) return false;
-            await process.WaitForExitAsync();
-            return process.ExitCode == 0;
+                var start = new ProcessStartInfo { FileName = "powershell.exe", UseShellExecute = false, CreateNoWindow = true };
+                start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-ExecutionPolicy"); start.ArgumentList.Add("Bypass");
+                start.ArgumentList.Add("-File"); start.ArgumentList.Add(script); start.ArgumentList.Add("-Path"); start.ArgumentList.Add(path);
+                using var process = Process.Start(start);
+                if (process == null) return false;
+                await process.WaitForExitAsync();
+                if (process.ExitCode != 0) return false;
+            }
+            return true;
         }
         catch (Exception ex) { _logger.LogWarning(ex, "Could not apply file audit policy"); return false; }
     }

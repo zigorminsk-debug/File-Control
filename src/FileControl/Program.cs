@@ -10,6 +10,7 @@ builder.Services.Configure<FileControlOptions>(builder.Configuration.GetSection(
 builder.Services.AddSingleton<EventRepository>();
 builder.Services.AddSingleton<DailyReportService>();
 builder.Services.AddSingleton<SettingsService>();
+builder.Services.AddSingleton<MonitorDiagnostics>();
 builder.Services.AddHostedService<SecurityAuditMonitor>();
 builder.Services.AddHostedService(sp=>sp.GetRequiredService<DailyReportService>());
 var app=builder.Build();
@@ -17,6 +18,7 @@ await app.Services.GetRequiredService<EventRepository>().InitializeAsync();
 app.UseDefaultFiles(); app.UseStaticFiles();
 app.MapGet("/api/events",async(DateTimeOffset? from,DateTimeOffset? to,string? user,string? document,int? limit,EventRepository repo)=>Results.Ok(await repo.QueryAsync(from??DateTimeOffset.Now.AddDays(-1),to??DateTimeOffset.Now.AddDays(1),user,document,limit??5000)));
 app.MapGet("/api/settings",(SettingsService settings)=>Results.Ok(settings.Current()));
+app.MapGet("/api/diagnostics",(MonitorDiagnostics d, Microsoft.Extensions.Options.IOptionsMonitor<FileControlOptions> o)=>Results.Ok(new { d.SubscriptionActive, d.LastError, d.Received, d.Accepted, d.LastSecurityEvent, d.LastAcceptedEvent, monitoredPaths=o.CurrentValue.MonitoredPaths }));
 app.MapPut("/api/settings",async(SettingsRequest request,SettingsService settings)=>{var result=await settings.SaveAsync(request);return result.Success?Results.Ok(new{message=result.Message}):Results.BadRequest(new{message=result.Message});});
 app.MapPost("/api/reports/{date}",async(string date,DailyReportService svc)=>DateOnly.TryParse(date,out var day)?Results.Ok(new{path=await svc.GenerateAsync(day)}):Results.BadRequest("Дата должна быть в формате YYYY-MM-DD"));
 app.MapGet("/api/health",()=>Results.Ok(new{status="ok",time=DateTimeOffset.Now}));

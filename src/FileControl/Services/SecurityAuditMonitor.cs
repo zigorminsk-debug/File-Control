@@ -9,10 +9,10 @@ namespace FileControl.Services;
 
 public sealed class SecurityAuditMonitor : BackgroundService
 {
-    private readonly EventRepository _repository; private readonly IOptionsMonitor<FileControlOptions> _options; private readonly ILogger<SecurityAuditMonitor> _logger;
+    private readonly EventRepository _repository; private readonly IOptionsMonitor<FileControlOptions> _options; private readonly ILogger<SecurityAuditMonitor> _logger; private readonly MonitorDiagnostics _diagnostics;
     private EventLogWatcher? _watcher;
     private static readonly string[] OfficeExtensions = [".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx", ".pptm", ".vsd", ".vsdx", ".pub", ".accdb"];
-    public SecurityAuditMonitor(EventRepository repository, IOptionsMonitor<FileControlOptions> options, ILogger<SecurityAuditMonitor> logger) => (_repository,_options,_logger)=(repository,options,logger);
+    public SecurityAuditMonitor(EventRepository repository, IOptionsMonitor<FileControlOptions> options, ILogger<SecurityAuditMonitor> logger, MonitorDiagnostics diagnostics) => (_repository,_options,_logger,_diagnostics)=(repository,options,logger,diagnostics);
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -20,18 +20,19 @@ public sealed class SecurityAuditMonitor : BackgroundService
         try
         {
             var query = new EventLogQuery("Security", PathType.LogName, "*[System[(EventID=4663)]]") { ReverseDirection = false, TolerateQueryErrors = true };
-            _watcher = new EventLogWatcher(query); _watcher.EventRecordWritten += OnEvent; _watcher.Enabled = true;
+            _watcher = new EventLogWatcher(query); _watcher.EventRecordWritten += OnEvent; _watcher.Enabled = true; _diagnostics.SubscriptionActive = true; _diagnostics.LastError = null;
             _logger.LogInformation("Monitoring Windows Security event 4663 for {Paths}", string.Join(", ", _options.CurrentValue.MonitoredPaths));
             stoppingToken.Register(() => { if (_watcher != null) _watcher.Enabled=false; });
         }
-        catch (Exception ex) { _logger.LogCritical(ex, "Cannot read the Security log. Run the service as LocalSystem/administrator and execute Install-Auditing.ps1"); }
+        catch (Exception ex) { _diagnostics.SubscriptionActive=false; _diagnostics.LastError=ex.Message; _logger.LogCritical(ex, "Cannot read the Security log. Run the service as LocalSystem/administrator and execute Install-Auditing.ps1"); }
         return Task.Delay(Timeout.Infinite, stoppingToken);
     }
 
     private async void OnEvent(object? sender, EventRecordWrittenEventArgs args)
     {
-        if (args.EventException != null) { _logger.LogError(args.EventException, "Security event subscription error"); return; }
+        if (args.EventException != null) { _diagnostics.SubscriptionActive=false; _diagnostics.LastError=args.EventException.Message; _logger.LogError(args.EventException, "Security event subscription error"); return; }
         using var record = args.EventRecord; if (record == null) return;
+        _diagnostics.ReceivedEvent();
         try
         {
             var root = XDocument.Parse(record.ToXml()).Root!; XNamespace ns = "http://schemas.microsoft.com/win/2004/08/events/event";
@@ -51,6 +52,7 @@ public sealed class SecurityAuditMonitor : BackgroundService
             var detail = OfficeExtensions.Contains(ext,StringComparer.OrdinalIgnoreCase) ? "Документ Microsoft Office" : null;
             if (name.StartsWith("~$",StringComparison.Ordinal) || ext.Equals(".tmp",StringComparison.OrdinalIgnoreCase)) detail="Временный/блокировочный файл Office";
             await _repository.AddAsync(new(0, record.TimeCreated is null ? DateTimeOffset.UtcNow : new DateTimeOffset(record.TimeCreated.Value), user, domain, path, name, action, Get(data,"ProcessName"), detail, record.RecordId ?? 0));
+            _diagnostics.AcceptedEvent();
         }
         catch (Exception ex) { _logger.LogError(ex,"Failed to process security audit record {Id}",record.RecordId); }
     }
