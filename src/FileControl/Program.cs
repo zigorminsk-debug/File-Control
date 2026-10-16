@@ -43,9 +43,11 @@ app.MapPost("/api/open-folder",(string path, Microsoft.Extensions.Options.IOptio
         if(!allowed) return Results.BadRequest(new { message="Путь не входит в область мониторинга." });
         var folder=Directory.Exists(fullPath)?fullPath:Path.GetDirectoryName(fullPath);
         if(string.IsNullOrWhiteSpace(folder)||!Directory.Exists(folder)) return Results.NotFound(new { message="Папка больше не существует." });
-        var start=new ProcessStartInfo("explorer.exe") { UseShellExecute=true };
-        if(File.Exists(fullPath)) start.ArgumentList.Add($"/select,{fullPath}"); else start.ArgumentList.Add(folder);
-        Process.Start(start);
+        // Explorer requires /select and the quoted path in its native command-line
+        // syntax. ArgumentList turns the whole value into one escaped argument and
+        // Explorer then falls back to the default Documents folder.
+        var arguments=File.Exists(fullPath)?$"/select,\"{fullPath}\"":$"\"{folder}\"";
+        Process.Start(new ProcessStartInfo("explorer.exe",arguments) { UseShellExecute=true });
         return Results.Ok(new { message="Папка открыта в Проводнике." });
     }
     catch(Exception ex) { return Results.BadRequest(new { message=ex.Message }); }
