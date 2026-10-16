@@ -4,6 +4,9 @@ using FileControl.Models;
 using FileControl.Services;
 using Microsoft.Extensions.Hosting.WindowsServices;
 
+var applicationVersion=System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1,0,0,0);
+var buildNumber=applicationVersion.Build;
+if (OperatingSystem.IsWindows() && Environment.UserInteractive) Console.Title=$"File Control — сборка {buildNumber}";
 var builder=WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(o=>o.ServiceName="FileControl");
 builder.Services.Configure<FileControlOptions>(builder.Configuration.GetSection("FileControl"));
@@ -29,6 +32,7 @@ app.MapGet("/api/events/stream",async(HttpContext context)=>
         await Task.Delay(2000,context.RequestAborted);
     }
 });
+app.MapGet("/api/version",()=>Results.Ok(new { version=applicationVersion.ToString(), build=buildNumber }));
 app.MapGet("/api/settings",(SettingsService settings)=>Results.Ok(settings.Current()));
 app.MapGet("/api/diagnostics",(MonitorDiagnostics d, Microsoft.Extensions.Options.IOptionsMonitor<FileControlOptions> o)=>Results.Ok(new { d.SubscriptionActive, d.LastError, d.Received, d.Accepted, d.LastSecurityEvent, d.LastAcceptedEvent, monitoredPaths=o.CurrentValue.MonitoredPaths }));
 app.MapPut("/api/settings",async(SettingsRequest request,SettingsService settings)=>{var result=await settings.SaveAsync(request);return result.Success?Results.Ok(new{message=result.Message}):Results.BadRequest(new{message=result.Message});});
