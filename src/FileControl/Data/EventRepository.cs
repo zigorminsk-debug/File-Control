@@ -27,6 +27,12 @@ public sealed class EventRepository
         CREATE INDEX IF NOT EXISTS ix_events_time ON file_events(timestamp);
         CREATE INDEX IF NOT EXISTS ix_events_user ON file_events(user);
         CREATE INDEX IF NOT EXISTS ix_events_name ON file_events(document_name);
+        -- Remove disposable editor/cache files collected by older versions.
+        DELETE FROM file_events WHERE lower(document_name) GLOB '*.tmp'
+          OR lower(document_name) GLOB '*.temp' OR lower(document_name) GLOB '*.bak'
+          OR lower(document_name) GLOB '*.swp' OR lower(document_name) GLOB '*.part'
+          OR lower(document_name) GLOB '*.crdownload' OR document_name LIKE '~%'
+          OR lower(document_name) IN ('thumbs.db','desktop.ini');
         """;
         await new SqliteCommand(sql, db).ExecuteNonQueryAsync();
     }
