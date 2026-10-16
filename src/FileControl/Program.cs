@@ -6,7 +6,6 @@ using Microsoft.Extensions.Hosting.WindowsServices;
 
 var applicationVersion=System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1,0,0,0);
 var buildNumber=applicationVersion.Build;
-if (OperatingSystem.IsWindows() && Environment.UserInteractive) Console.Title=$"File Control — сборка {buildNumber}";
 var builder=WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(o=>o.ServiceName="FileControl");
 builder.Services.Configure<FileControlOptions>(builder.Configuration.GetSection("FileControl"));
