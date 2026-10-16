@@ -4,7 +4,11 @@ $ErrorActionPreference = 'Stop'
 # Language-neutral GUID of the "File System" audit subcategory. Using its English
 # name fails silently on localized (for example Russian) Windows installations.
 auditpol /set /subcategory:"{0cce921d-69ae-11d9-bed3-505054503030}" /success:enable /failure:enable | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "auditpol failed with exit code $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "auditpol File System failed with exit code $LASTEXITCODE" }
+# Detailed File Share (5145) preserves the authenticated SMB login even when a
+# subsequent local file operation is executed under the server computer account.
+auditpol /set /subcategory:"{0cce9244-69ae-11d9-bed3-505054503030}" /success:enable /failure:disable | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "auditpol Detailed File Share failed with exit code $LASTEXITCODE" }
 foreach ($p in $Path) {
   if (!(Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
   $acl = Get-Acl -LiteralPath $p -Audit

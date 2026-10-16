@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.Eventing.Reader;
 using System.Globalization;
 using System.Xml.Linq;
@@ -11,6 +12,7 @@ public sealed class SecurityAuditMonitor : BackgroundService
 {
     private readonly EventRepository _repository; private readonly IOptionsMonitor<FileControlOptions> _options; private readonly ILogger<SecurityAuditMonitor> _logger; private readonly MonitorDiagnostics _diagnostics;
     private EventLogWatcher? _watcher;
+    private readonly ConcurrentDictionary<string,(string User,string Domain,DateTimeOffset Time)> _networkUsers = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] OfficeExtensions = [".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx", ".pptm", ".vsd", ".vsdx", ".pub", ".accdb"];
     public SecurityAuditMonitor(EventRepository repository, IOptionsMonitor<FileControlOptions> options, ILogger<SecurityAuditMonitor> logger, MonitorDiagnostics diagnostics) => (_repository,_options,_logger,_diagnostics)=(repository,options,logger,diagnostics);
 
@@ -19,7 +21,9 @@ public sealed class SecurityAuditMonitor : BackgroundService
         if (!OperatingSystem.IsWindows()) { _logger.LogWarning("Security audit monitor is available only on Windows"); return Task.CompletedTask; }
         try
         {
-            var query = new EventLogQuery("Security", PathType.LogName, "*[System[(EventID=4663)]]") { ReverseDirection = false, TolerateQueryErrors = true };
+            // 5145 contains the authenticated SMB user. It is used to correct 4663
+            // operations that Windows performs later under the server computer account.
+            var query = new EventLogQuery("Security", PathType.LogName, "*[System[(EventID=4663 or EventID=5145)]]") { ReverseDirection = false, TolerateQueryErrors = true };
             _watcher = new EventLogWatcher(query); _watcher.EventRecordWritten += OnEvent; _watcher.Enabled = true; _diagnostics.SubscriptionActive = true; _diagnostics.LastError = null;
             _logger.LogInformation("Monitoring Windows Security event 4663 for {Paths}", string.Join(", ", _options.CurrentValue.MonitoredPaths));
             stoppingToken.Register(() => { if (_watcher != null) _watcher.Enabled=false; });
@@ -37,7 +41,20 @@ public sealed class SecurityAuditMonitor : BackgroundService
         {
             var root = XDocument.Parse(record.ToXml()).Root!; XNamespace ns = "http://schemas.microsoft.com/win/2004/08/events/event";
             var data = root.Descendants(ns+"Data").Where(x=>x.Attribute("Name")!=null).ToDictionary(x=>x.Attribute("Name")!.Value,x=>x.Value,StringComparer.OrdinalIgnoreCase);
-            var path = Get(data,"ObjectName"); var user=Get(data,"SubjectUserName"); var domain=Get(data,"SubjectDomainName");
+            var eventId = record.Id;
+            var user=Get(data,"SubjectUserName"); var domain=Get(data,"SubjectDomainName");
+            if (eventId == 5145)
+            {
+                var rootPath = Get(data,"ShareLocalPath").Replace("\\??\\", "", StringComparison.Ordinal);
+                var relative = Get(data,"RelativeTargetName").TrimStart('\\');
+                var networkPath = Path.GetFullPath(Path.Combine(rootPath, relative));
+                if (IsMonitored(networkPath) && !user.EndsWith("$",StringComparison.Ordinal))
+                    _networkUsers[networkPath]=(user,domain,DateTimeOffset.Now);
+                return;
+            }
+            var path = Get(data,"ObjectName");
+            if (user.EndsWith("$",StringComparison.Ordinal) && _networkUsers.TryGetValue(path,out var smb) && DateTimeOffset.Now-smb.Time < TimeSpan.FromSeconds(10))
+                (user,domain)=(smb.User,smb.Domain);
             if (string.IsNullOrWhiteSpace(path) || !IsMonitored(path) || _options.CurrentValue.IgnoredUsers.Contains(user,StringComparer.OrdinalIgnoreCase) || path.EndsWith("\\",StringComparison.Ordinal)) return;
             var mask = ParseMask(Get(data,"AccessMask")); var action = ActionFromMask(mask); if (action == null) return;
             // 4663 does not have a separate "created" flag. A WriteData operation on a file
