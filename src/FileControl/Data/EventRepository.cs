@@ -39,19 +39,27 @@ public sealed class EventRepository
         await new SqliteCommand(sql, db).ExecuteNonQueryAsync();
     }
 
-    public async Task<bool> TryMergeOfficeReplacementAsync(string path, DateTimeOffset timestamp)
+    public async Task<bool> TryMergeOfficeReplacementAsync(string path, DateTimeOffset timestamp, string incomingAction)
     {
         await using var db = new SqliteConnection(_connectionString); await db.OpenAsync();
         var cmd = db.CreateCommand();
-        cmd.CommandText = """
+        // EventLogWatcher callbacks are concurrent: Windows may deliver the write before
+        // the delete callback has finished even when their displayed timestamps match.
+        // Handle both arrival orders within a deliberately short replacement window.
+        cmd.CommandText = incomingAction == "Удаление" ? """
+          SELECT EXISTS(SELECT 1 FROM file_events
+            WHERE path=$path AND action IN ('Создание','Изменение')
+              AND timestamp >= $from AND timestamp <= $to LIMIT 1)
+          """ : """
           UPDATE file_events SET action='Изменение', details='Сохранение документа Office (замена файла)'
           WHERE id = (SELECT id FROM file_events
             WHERE path=$path AND action='Удаление' AND timestamp >= $from AND timestamp <= $to
             ORDER BY timestamp DESC LIMIT 1)
           """;
         cmd.Parameters.AddWithValue("$path", path);
-        cmd.Parameters.AddWithValue("$from", timestamp.ToUniversalTime().AddSeconds(-15).ToString("O"));
-        cmd.Parameters.AddWithValue("$to", timestamp.ToUniversalTime().AddSeconds(2).ToString("O"));
+        cmd.Parameters.AddWithValue("$from", timestamp.ToUniversalTime().AddSeconds(-3).ToString("O"));
+        cmd.Parameters.AddWithValue("$to", timestamp.ToUniversalTime().AddSeconds(3).ToString("O"));
+        if(incomingAction == "Удаление") return Convert.ToInt64(await cmd.ExecuteScalarAsync()) == 1;
         return await cmd.ExecuteNonQueryAsync() > 0;
     }
 

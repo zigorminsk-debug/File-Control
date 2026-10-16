@@ -13,6 +13,7 @@ public sealed class SecurityAuditMonitor : BackgroundService
     private readonly EventRepository _repository; private readonly IOptionsMonitor<FileControlOptions> _options; private readonly ILogger<SecurityAuditMonitor> _logger; private readonly MonitorDiagnostics _diagnostics; private readonly AnomalyAlertService _alerts;
     private EventLogWatcher? _watcher;
     private readonly ConcurrentDictionary<string,(string User,string Domain,DateTimeOffset Time)> _networkUsers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _officeCorrelationLock = new(1,1);
     private static readonly string[] OfficeExtensions = [".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx", ".pptm", ".vsd", ".vsdx", ".pub", ".accdb"];
     public SecurityAuditMonitor(EventRepository repository, IOptionsMonitor<FileControlOptions> options, ILogger<SecurityAuditMonitor> logger, MonitorDiagnostics diagnostics,AnomalyAlertService alerts) => (_repository,_options,_logger,_diagnostics,_alerts)=(repository,options,logger,diagnostics,alerts);
 
@@ -75,14 +76,19 @@ public sealed class SecurityAuditMonitor : BackgroundService
             // Office saves atomically: delete old file, then write/rename its replacement.
             // Present that pair as one modification and retain the real user from deletion,
             // rather than showing a second operation under the server computer account.
-            if (isOffice && action != "Удаление" && await _repository.TryMergeOfficeReplacementAsync(path,eventTime))
+            if(isOffice) await _officeCorrelationLock.WaitAsync();
+            try
             {
+                if (isOffice && await _repository.TryMergeOfficeReplacementAsync(path,eventTime,action))
+                {
+                    _diagnostics.AcceptedEvent();
+                    return;
+                }
+                await _repository.AddAsync(new(0, eventTime, user, domain, path, name, action, Get(data,"ProcessName"), detail, record.RecordId ?? 0));
+                _alerts.Record(eventTime,user,domain,action,path);
                 _diagnostics.AcceptedEvent();
-                return;
             }
-            await _repository.AddAsync(new(0, eventTime, user, domain, path, name, action, Get(data,"ProcessName"), detail, record.RecordId ?? 0));
-            _alerts.Record(eventTime,user,domain,action,path);
-            _diagnostics.AcceptedEvent();
+            finally { if(isOffice) _officeCorrelationLock.Release(); }
         }
         catch (Exception ex) { _logger.LogError(ex,"Failed to process security audit record {Id}",record.RecordId); }
     }
