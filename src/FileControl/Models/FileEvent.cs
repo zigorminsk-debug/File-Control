@@ -6,7 +6,7 @@ public sealed record FileEventRecord(
 
 public sealed class FileControlOptions
 {
-    public string[] MonitoredPaths { get; set; } = [@"C:\Shared"];
+    public string[] MonitoredPaths { get; set; } = [];
     public string DatabasePath { get; set; } = @"data\filecontrol.db";
     public string ReportDirectory { get; set; } = "reports";
     public int ReportHour { get; set; } = 1;

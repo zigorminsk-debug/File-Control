@@ -1,5 +1,5 @@
 #Requires -RunAsAdministrator
-param([string]$InstallDir="$env:ProgramFiles\FileControl",[string[]]$MonitoredPath=@('C:\Shared'))
+param([string]$InstallDir="$env:ProgramFiles\FileControl",[Parameter(Mandatory=$true)][string[]]$MonitoredPath)
 $ErrorActionPreference='Stop'; $source=Split-Path $PSScriptRoot -Parent
 if(Get-Service FileControl -ErrorAction SilentlyContinue){Stop-Service FileControl -Force; sc.exe delete FileControl | Out-Null; Start-Sleep 2}
 New-Item -ItemType Directory -Force $InstallDir | Out-Null; Copy-Item "$source\*" $InstallDir -Recurse -Force
