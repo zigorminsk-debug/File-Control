@@ -16,7 +16,7 @@ builder.Services.AddHostedService(sp=>sp.GetRequiredService<DailyReportService>(
 var app=builder.Build();
 await app.Services.GetRequiredService<EventRepository>().InitializeAsync();
 app.UseDefaultFiles(); app.UseStaticFiles();
-app.MapGet("/api/events",async(DateTimeOffset? from,DateTimeOffset? to,string? user,string? document,int? limit,EventRepository repo,HttpContext context)=>{context.Response.Headers.CacheControl="no-store, no-cache, must-revalidate";return Results.Ok(await repo.QueryAsync(from??DateTimeOffset.Now.AddDays(-1),to??DateTimeOffset.Now.AddDays(1),user,document,limit??5000));});
+app.MapGet("/api/events",async(DateTimeOffset? from,DateTimeOffset? to,string? user,string? document,string? action,int? limit,EventRepository repo,HttpContext context)=>{context.Response.Headers.CacheControl="no-store, no-cache, must-revalidate";return Results.Ok(await repo.QueryAsync(from??DateTimeOffset.Now.AddDays(-1),to??DateTimeOffset.Now.AddDays(1),user,document,limit??5000,action));});
 // Server-Sent Events keep the dashboard live even when browsers throttle JavaScript timers.
 app.MapGet("/api/events/stream",async(HttpContext context)=>
 {

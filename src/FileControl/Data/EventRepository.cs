@@ -65,16 +65,18 @@ public sealed class EventRepository
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task<List<FileEventRecord>> QueryAsync(DateTimeOffset from, DateTimeOffset to, string? user, string? document, int limit = 5000)
+    public async Task<List<FileEventRecord>> QueryAsync(DateTimeOffset from, DateTimeOffset to, string? user, string? document, int limit = 5000, string? action = null)
     {
         await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(); var cmd = db.CreateCommand();
         cmd.CommandText = """
           SELECT id,timestamp,user,domain,path,document_name,action,process,details,event_record_id FROM file_events
           WHERE timestamp >= $from AND timestamp < $to AND ($user='' OR user LIKE $user) AND ($doc='' OR document_name LIKE $doc OR path LIKE $doc)
+            AND ($action='' OR action=$action)
           ORDER BY timestamp DESC LIMIT $limit
           """;
         cmd.Parameters.AddWithValue("$from", from.ToUniversalTime().ToString("O")); cmd.Parameters.AddWithValue("$to", to.ToUniversalTime().ToString("O"));
-        cmd.Parameters.AddWithValue("$user", string.IsNullOrWhiteSpace(user) ? "" : $"%{user}%"); cmd.Parameters.AddWithValue("$doc", string.IsNullOrWhiteSpace(document) ? "" : $"%{document}%"); cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 20000));
+        cmd.Parameters.AddWithValue("$user", string.IsNullOrWhiteSpace(user) ? "" : $"%{user}%"); cmd.Parameters.AddWithValue("$doc", string.IsNullOrWhiteSpace(document) ? "" : $"%{document}%");
+        cmd.Parameters.AddWithValue("$action", action is "Создание" or "Изменение" or "Удаление" ? action : ""); cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 20000));
         var rows = new List<FileEventRecord>(); await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync()) rows.Add(new(r.GetInt64(0), DateTimeOffset.Parse(r.GetString(1)), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5), r.GetString(6), r.IsDBNull(7)?null:r.GetString(7), r.IsDBNull(8)?null:r.GetString(8), r.GetInt64(9)));
         return rows;
