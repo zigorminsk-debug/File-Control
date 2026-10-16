@@ -69,8 +69,18 @@ public sealed class SecurityAuditMonitor : BackgroundService
             // Office and many editors generate a large number of disposable lock/cache files.
             // They are required for saving, but are noise in the user-facing audit journal.
             if (IsTemporaryFile(name, ext)) return;
-            var detail = OfficeExtensions.Contains(ext,StringComparer.OrdinalIgnoreCase) ? "Документ Microsoft Office" : null;
-            await _repository.AddAsync(new(0, record.TimeCreated is null ? DateTimeOffset.UtcNow : new DateTimeOffset(record.TimeCreated.Value), user, domain, path, name, action, Get(data,"ProcessName"), detail, record.RecordId ?? 0));
+            var isOffice = OfficeExtensions.Contains(ext,StringComparer.OrdinalIgnoreCase);
+            var detail = isOffice ? "Документ Microsoft Office" : null;
+            var eventTime = record.TimeCreated is null ? DateTimeOffset.UtcNow : new DateTimeOffset(record.TimeCreated.Value);
+            // Office saves atomically: delete old file, then write/rename its replacement.
+            // Present that pair as one modification and retain the real user from deletion,
+            // rather than showing a second operation under the server computer account.
+            if (isOffice && action != "Удаление" && await _repository.TryMergeOfficeReplacementAsync(path,eventTime))
+            {
+                _diagnostics.AcceptedEvent();
+                return;
+            }
+            await _repository.AddAsync(new(0, eventTime, user, domain, path, name, action, Get(data,"ProcessName"), detail, record.RecordId ?? 0));
             _diagnostics.AcceptedEvent();
         }
         catch (Exception ex) { _logger.LogError(ex,"Failed to process security audit record {Id}",record.RecordId); }

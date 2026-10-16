@@ -37,6 +37,22 @@ public sealed class EventRepository
         await new SqliteCommand(sql, db).ExecuteNonQueryAsync();
     }
 
+    public async Task<bool> TryMergeOfficeReplacementAsync(string path, DateTimeOffset timestamp)
+    {
+        await using var db = new SqliteConnection(_connectionString); await db.OpenAsync();
+        var cmd = db.CreateCommand();
+        cmd.CommandText = """
+          UPDATE file_events SET action='Изменение', details='Сохранение документа Office (замена файла)'
+          WHERE id = (SELECT id FROM file_events
+            WHERE path=$path AND action='Удаление' AND timestamp >= $from AND timestamp <= $to
+            ORDER BY timestamp DESC LIMIT 1)
+          """;
+        cmd.Parameters.AddWithValue("$path", path);
+        cmd.Parameters.AddWithValue("$from", timestamp.ToUniversalTime().AddSeconds(-15).ToString("O"));
+        cmd.Parameters.AddWithValue("$to", timestamp.ToUniversalTime().AddSeconds(2).ToString("O"));
+        return await cmd.ExecuteNonQueryAsync() > 0;
+    }
+
     public async Task AddAsync(FileEventRecord e)
     {
         await using var db = new SqliteConnection(_connectionString); await db.OpenAsync();
