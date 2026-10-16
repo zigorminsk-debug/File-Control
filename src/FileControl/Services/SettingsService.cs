@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace FileControl.Services;
 
-public sealed record SettingsRequest(string[] MonitoredPaths, int ReportHour, int RetentionDays);
+public sealed record SettingsRequest(string[] MonitoredPaths, int ReportHour, int RetentionDays, bool EmailEnabled=false, int EmailThreshold=10, int EmailWindowMinutes=2, int EmailCooldownMinutes=30, string? SmtpHost=null, int SmtpPort=587, bool SmtpSsl=true, string? SmtpUsername=null, string? SmtpPassword=null, string? EmailFrom=null, string[]? EmailRecipients=null);
 
 public sealed class SettingsService
 {
@@ -22,6 +22,17 @@ public sealed class SettingsService
         monitoredPaths = _options.CurrentValue.MonitoredPaths,
         reportHour = _options.CurrentValue.ReportHour,
         retentionDays = _options.CurrentValue.RetentionDays,
+        emailEnabled = _options.CurrentValue.EmailAlerts.Enabled,
+        emailThreshold = _options.CurrentValue.EmailAlerts.Threshold,
+        emailWindowMinutes = _options.CurrentValue.EmailAlerts.WindowMinutes,
+        emailCooldownMinutes = _options.CurrentValue.EmailAlerts.CooldownMinutes,
+        smtpHost = _options.CurrentValue.EmailAlerts.SmtpHost,
+        smtpPort = _options.CurrentValue.EmailAlerts.SmtpPort,
+        smtpSsl = _options.CurrentValue.EmailAlerts.UseSsl,
+        smtpUsername = _options.CurrentValue.EmailAlerts.Username,
+        hasSmtpPassword = !string.IsNullOrEmpty(_options.CurrentValue.EmailAlerts.Password),
+        emailFrom = _options.CurrentValue.EmailAlerts.From,
+        emailRecipients = _options.CurrentValue.EmailAlerts.Recipients,
         drives = DriveInfo.GetDrives().Where(d => d.IsReady).Select(d => new
         {
             path = d.RootDirectory.FullName,
@@ -43,6 +54,11 @@ public sealed class SettingsService
         section["MonitoredPaths"] = JsonSerializer.SerializeToNode(paths);
         section["ReportHour"] = Math.Clamp(request.ReportHour, 0, 23);
         section["RetentionDays"] = Math.Clamp(request.RetentionDays, 1, 3650);
+        var oldPassword=section["EmailAlerts"]?["Password"]?.GetValue<string>() ?? "";
+        section["EmailAlerts"] = JsonSerializer.SerializeToNode(new EmailAlertOptions {
+            Enabled=request.EmailEnabled, Threshold=Math.Clamp(request.EmailThreshold,2,100000), WindowMinutes=Math.Clamp(request.EmailWindowMinutes,1,1440), CooldownMinutes=Math.Clamp(request.EmailCooldownMinutes,1,1440),
+            SmtpHost=request.SmtpHost?.Trim()??"", SmtpPort=Math.Clamp(request.SmtpPort,1,65535), UseSsl=request.SmtpSsl, Username=request.SmtpUsername?.Trim()??"", Password=string.IsNullOrEmpty(request.SmtpPassword)?oldPassword:request.SmtpPassword,
+            From=request.EmailFrom?.Trim()??"", Recipients=request.EmailRecipients?.Where(x=>!string.IsNullOrWhiteSpace(x)).Select(x=>x.Trim()).ToArray()??[] });
         await File.WriteAllTextAsync(configPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
         var audit = await ApplyAuditAsync(paths);

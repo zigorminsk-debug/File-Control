@@ -10,11 +10,11 @@ namespace FileControl.Services;
 
 public sealed class SecurityAuditMonitor : BackgroundService
 {
-    private readonly EventRepository _repository; private readonly IOptionsMonitor<FileControlOptions> _options; private readonly ILogger<SecurityAuditMonitor> _logger; private readonly MonitorDiagnostics _diagnostics;
+    private readonly EventRepository _repository; private readonly IOptionsMonitor<FileControlOptions> _options; private readonly ILogger<SecurityAuditMonitor> _logger; private readonly MonitorDiagnostics _diagnostics; private readonly AnomalyAlertService _alerts;
     private EventLogWatcher? _watcher;
     private readonly ConcurrentDictionary<string,(string User,string Domain,DateTimeOffset Time)> _networkUsers = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] OfficeExtensions = [".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx", ".pptm", ".vsd", ".vsdx", ".pub", ".accdb"];
-    public SecurityAuditMonitor(EventRepository repository, IOptionsMonitor<FileControlOptions> options, ILogger<SecurityAuditMonitor> logger, MonitorDiagnostics diagnostics) => (_repository,_options,_logger,_diagnostics)=(repository,options,logger,diagnostics);
+    public SecurityAuditMonitor(EventRepository repository, IOptionsMonitor<FileControlOptions> options, ILogger<SecurityAuditMonitor> logger, MonitorDiagnostics diagnostics,AnomalyAlertService alerts) => (_repository,_options,_logger,_diagnostics,_alerts)=(repository,options,logger,diagnostics,alerts);
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -81,6 +81,7 @@ public sealed class SecurityAuditMonitor : BackgroundService
                 return;
             }
             await _repository.AddAsync(new(0, eventTime, user, domain, path, name, action, Get(data,"ProcessName"), detail, record.RecordId ?? 0));
+            _alerts.Record(eventTime,user,domain,action,path);
             _diagnostics.AcceptedEvent();
         }
         catch (Exception ex) { _logger.LogError(ex,"Failed to process security audit record {Id}",record.RecordId); }

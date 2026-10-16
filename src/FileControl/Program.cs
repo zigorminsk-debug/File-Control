@@ -13,6 +13,8 @@ builder.Services.AddSingleton<EventRepository>();
 builder.Services.AddSingleton<DailyReportService>();
 builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddSingleton<MonitorDiagnostics>();
+builder.Services.AddSingleton<AnomalyAlertService>();
+builder.Services.AddHostedService(sp=>sp.GetRequiredService<AnomalyAlertService>());
 builder.Services.AddHostedService<SecurityAuditMonitor>();
 builder.Services.AddHostedService(sp=>sp.GetRequiredService<DailyReportService>());
 var app=builder.Build();
