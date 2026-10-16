@@ -32,7 +32,9 @@ public sealed class EventRepository
           OR lower(document_name) GLOB '*.temp' OR lower(document_name) GLOB '*.bak'
           OR lower(document_name) GLOB '*.swp' OR lower(document_name) GLOB '*.part'
           OR lower(document_name) GLOB '*.crdownload' OR document_name LIKE '~%'
-          OR lower(document_name) IN ('thumbs.db','desktop.ini');
+          OR lower(document_name) IN ('thumbs.db','desktop.ini')
+          OR (length(document_name)=8 AND document_name NOT LIKE '%.%'
+              AND document_name GLOB '[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]');
         """;
         await new SqliteCommand(sql, db).ExecuteNonQueryAsync();
     }

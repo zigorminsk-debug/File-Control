@@ -97,7 +97,10 @@ public sealed class SecurityAuditMonitor : BackgroundService
         extension.Equals(".part", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".crdownload", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase);
+        name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) ||
+        // A number of accounting/registry applications create extensionless
+        // eight-character hexadecimal scratch files (for example D0777C10).
+        (extension.Length == 0 && name.Length == 8 && name.All(Uri.IsHexDigit));
     private static string Get(Dictionary<string,string> d,string key)=>d.TryGetValue(key,out var v)?v:"";
     private static long ParseMask(string value) { value=value.Trim(); return long.TryParse(value.StartsWith("0x")?value[2..]:value, value.StartsWith("0x")?NumberStyles.HexNumber:NumberStyles.Integer,CultureInfo.InvariantCulture,out var n)?n:0; }
     internal static string? ActionFromMask(long mask)

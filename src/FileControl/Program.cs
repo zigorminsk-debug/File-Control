@@ -32,6 +32,22 @@ app.MapGet("/api/events/stream",async(HttpContext context)=>
     }
 });
 app.MapGet("/api/version",()=>Results.Ok(new { version=applicationVersion.ToString(), build=buildNumber }));
+app.MapPost("/api/open-folder",(string path, Microsoft.Extensions.Options.IOptionsMonitor<FileControlOptions> options)=>
+{
+    try
+    {
+        var fullPath=Path.GetFullPath(path);
+        var allowed=options.CurrentValue.MonitoredPaths.Any(root=>fullPath.StartsWith(Path.GetFullPath(root).TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase));
+        if(!allowed) return Results.BadRequest(new { message="Путь не входит в область мониторинга." });
+        var folder=Directory.Exists(fullPath)?fullPath:Path.GetDirectoryName(fullPath);
+        if(string.IsNullOrWhiteSpace(folder)||!Directory.Exists(folder)) return Results.NotFound(new { message="Папка больше не существует." });
+        var start=new ProcessStartInfo("explorer.exe") { UseShellExecute=true };
+        if(File.Exists(fullPath)) start.ArgumentList.Add($"/select,{fullPath}"); else start.ArgumentList.Add(folder);
+        Process.Start(start);
+        return Results.Ok(new { message="Папка открыта в Проводнике." });
+    }
+    catch(Exception ex) { return Results.BadRequest(new { message=ex.Message }); }
+});
 app.MapGet("/api/settings",(SettingsService settings)=>Results.Ok(settings.Current()));
 app.MapGet("/api/diagnostics",(MonitorDiagnostics d, Microsoft.Extensions.Options.IOptionsMonitor<FileControlOptions> o)=>Results.Ok(new { d.SubscriptionActive, d.LastError, d.Received, d.Accepted, d.LastSecurityEvent, d.LastAcceptedEvent, monitoredPaths=o.CurrentValue.MonitoredPaths }));
 app.MapPut("/api/settings",async(SettingsRequest request,SettingsService settings)=>{var result=await settings.SaveAsync(request);return result.Success?Results.Ok(new{message=result.Message}):Results.BadRequest(new{message=result.Message});});
