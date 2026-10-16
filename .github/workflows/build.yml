@@ -23,9 +23,10 @@ jobs:
         run: |
           Copy-Item scripts publish/scripts -Recurse
           Copy-Item README.md publish/README.md
-          Compress-Archive publish/* FileControl-win-x64-build-${{ github.run_number }}.zip
+      # upload-artifact already creates the single downloadable ZIP archive.
+      # Upload the folder directly to avoid a ZIP file nested inside another ZIP.
       - uses: actions/upload-artifact@v4
         with:
           name: FileControl-win-x64-build-${{ github.run_number }}
-          path: FileControl-win-x64-build-${{ github.run_number }}.zip
+          path: publish/
           if-no-files-found: error
