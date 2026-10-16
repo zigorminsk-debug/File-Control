@@ -26,7 +26,9 @@ public sealed class DailyReportService : BackgroundService
     public async Task<string> GenerateFilteredAsync(DateTimeOffset from,DateTimeOffset to,string? user,string? document,string? action,string? label=null,CancellationToken token=default)
     {
         var rows=await _repo.QueryAsync(from,to,user,document,20000,action);
-        var json=JsonSerializer.Serialize(rows,new JsonSerializerOptions{Encoder=JavaScriptEncoder.Default});
+        // Match ASP.NET's camelCase JSON used by the dashboard. The standalone
+        // report template reads timestamp, user, action, documentName and path.
+        var json=JsonSerializer.Serialize(rows,new JsonSerializerOptions{Encoder=JavaScriptEncoder.Default,PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
         var template=await File.ReadAllTextAsync(Path.Combine(_env.WebRootPath,"report-template.html"),token);
         var dir=Path.IsPathRooted(_options.ReportDirectory)?_options.ReportDirectory:Path.Combine(_env.ContentRootPath,_options.ReportDirectory); Directory.CreateDirectory(dir);
         label??=$"{from:dd.MM.yyyy HH:mm} — {to:dd.MM.yyyy HH:mm}";
