@@ -49,14 +49,28 @@ public sealed class SecurityAuditMonitor : BackgroundService
                 if (Math.Abs((created - eventUtc).TotalSeconds) <= 5) action = "Создание";
             }
             var name=Path.GetFileName(path); var ext=Path.GetExtension(name);
+            // Office and many editors generate a large number of disposable lock/cache files.
+            // They are required for saving, but are noise in the user-facing audit journal.
+            if (IsTemporaryFile(name, ext)) return;
             var detail = OfficeExtensions.Contains(ext,StringComparer.OrdinalIgnoreCase) ? "Документ Microsoft Office" : null;
-            if (name.StartsWith("~$",StringComparison.Ordinal) || ext.Equals(".tmp",StringComparison.OrdinalIgnoreCase)) detail="Временный/блокировочный файл Office";
             await _repository.AddAsync(new(0, record.TimeCreated is null ? DateTimeOffset.UtcNow : new DateTimeOffset(record.TimeCreated.Value), user, domain, path, name, action, Get(data,"ProcessName"), detail, record.RecordId ?? 0));
             _diagnostics.AcceptedEvent();
         }
         catch (Exception ex) { _logger.LogError(ex,"Failed to process security audit record {Id}",record.RecordId); }
     }
     private bool IsMonitored(string path) => _options.CurrentValue.MonitoredPaths.Any(p=>path.StartsWith(Path.GetFullPath(p).TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase) || path.Equals(Path.GetFullPath(p),StringComparison.OrdinalIgnoreCase));
+    private static bool IsTemporaryFile(string name, string extension) =>
+        name.StartsWith("~$", StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith("~", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".temp", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".bak", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".swp", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".part", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".crdownload", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase);
     private static string Get(Dictionary<string,string> d,string key)=>d.TryGetValue(key,out var v)?v:"";
     private static long ParseMask(string value) { value=value.Trim(); return long.TryParse(value.StartsWith("0x")?value[2..]:value, value.StartsWith("0x")?NumberStyles.HexNumber:NumberStyles.Integer,CultureInfo.InvariantCulture,out var n)?n:0; }
     internal static string? ActionFromMask(long mask)
